@@ -1,0 +1,109 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Daniel Arboleda"
+date: "11/3/2021"
+output: html_document
+---
+
+## *1. Objective*
+Use data collected from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict how well the do their exercise.
+
+## *2. Pre Processing*
+First of all, it is important to load the pakages needed for the analysis.
+```{r Data Preprocessing, cache = T}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(psych)
+```
+
+## *3. Data Loading*
+The second step for the analysis is to download and load the data.
+```{r Data Loading, cache = T}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile=trainFile, method="curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile=testFile, method="curl")
+}
+
+trainRaw <- read.csv("./data/pml-training.csv")
+testRaw <- read.csv("./data/pml-testing.csv")
+dim(trainRaw)
+dim(testRaw)
+```
+
+## *4. Data Cleaning*
+It's important to have a clean database, so, the next step is to get rid of missing values and variables that are useless for the analysis
+
+```{r Data Cleaning, cache = T}
+sum(complete.cases(trainRaw))
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0] 
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0]
+
+classe <- trainRaw$classe
+trainRem <- grepl("^X|timestamp|window", names(trainRaw))
+trainRaw <- trainRaw[, !trainRem]
+trainCl <- trainRaw[, sapply(trainRaw, is.numeric)]
+trainCl$classe <- classe
+testRem <- grepl("^X|timestamp|window", names(testRaw))
+testRaw <- testRaw[, !testRem]
+testCl <- testRaw[, sapply(testRaw, is.numeric)]
+```
+
+## *5. Data Modeling*
+Before modeling, I create the training (70%) and validation (30%) datasets from the clean training dataset before doing the crossvalidation.
+```{r Data Splitting, cache = T}
+set.seed(35782)
+inTrain <- createDataPartition(trainCl$classe, p=0.70, list=F)
+trainData <- trainCl[inTrain, ]
+testData <- trainCl[-inTrain, ]
+```
+Then I predict a model using *Random Forest algorithm* using all variables. I use *5-fold cross validation*
+```{r Data Prediction, cache = T}
+controlRF <- trainControl(method="cv", 5)
+modelRF <- train(classe ~ ., data=trainData, method="rf", trControl=controlRF, ntree=250)
+modelRF
+```
+The next step is to estimate the performance of the model on the validation dataset.
+```{r Performance Estimation, cache = T}
+predictRF <- predict(modelRF, testData)
+confusionMatrix(testData$classe, predictRF)
+```
+```{r Confusion Matrix, cache = T}
+ACC <- postResample(predictRF, testData$classe)
+ACC
+SE <- 1 - as.numeric(confusionMatrix(testData$classe, predictRF)$overall[1])
+SE
+```
+So, the estimated accuracy of the model is 99.38% and the estimated out-of-sample error is 0.61%.
+
+## *6. Prediction Results*
+As a final step I apply the estimation to the test dataset. 
+```{r Prediction Results, cache = T}
+RES <- predict(modelRF, testCl[, -length(names(testCl))])
+RES
+```
+
+## *7. Appendix*
+*Appendix 1. Correlation Matrix Visualization*
+```{r Appendix 1, cache = T}
+corr <- cor(trainData[, -length(names(trainData))])
+cor.plot(corr, show.legend = TRUE, cex = 0.4,
+         main = "Correlation of variables from training set",
+         cex.main = 0.4)
+```
+
+*Appendix 2. Decision Tree Visualization*
+```{r Appendix 2, cache = T}
+treeModel <- rpart(classe ~ ., data=trainData, method="class")
+prp(treeModel)
+```
